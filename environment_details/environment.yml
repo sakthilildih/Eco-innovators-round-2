@@ -1,0 +1,18 @@
+name: solar-panel-detection
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.5
+  - pytorch=2.1.0
+  - torchvision=0.16.0
+  - cudatoolkit=11.8
+  - pip
+  - pip:
+    - ultralytics>=8.0.196
+    - opencv-python>=4.8.1
+    - numpy>=1.26.0
+    - requests>=2.31.0
+    - Pillow>=10.0.1
+    - matplotlib>=3.8.0

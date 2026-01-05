@@ -1,0 +1,23 @@
+﻿{
+    "image":  "sample_image.png",
+    "buffer_used":  "primary",
+    "panel_area_sqft":  241.65,
+    "detections":  [
+                       {
+                           "confidence":  0.85,
+                           "id":  0,
+                           "bbox":  [
+                                        294,
+                                        291,
+                                        339,
+                                        334
+                                    ],
+                           "area_m2":  22.45
+                       }
+                   ],
+    "mask_area_m2":  18.67,
+    "distance_from_center_m":  1.23,
+    "pv_present":  true,
+    "panel_area_m2":  22.45,
+    "confidence":  0.85
+}
