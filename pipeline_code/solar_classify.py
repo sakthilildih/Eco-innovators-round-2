@@ -117,9 +117,13 @@ def calculate_euclidean_distance(bbox, center, scale_m_per_pixel):
 # ============================================================
 class SolarPanelClassifier:
     def __init__(self, 
-                 model_path='F:/AURA/final/models/best.pt',
+                 model_path=None,
                  conf_threshold=0.25,
                  scale_m_per_pixel=GSD_M_PER_PIXEL):
+        # Default model path - use project-relative path
+        if model_path is None:
+            script_dir = Path(__file__).parent.parent
+            model_path = str(script_dir / 'trained_model' / 'best.pt')
         """
         Initialize the solar panel classifier.
         
@@ -338,33 +342,6 @@ class SolarPanelClassifier:
         # Build detection list with overlap calculations
         detections = []
         for i, (bbox, conf) in enumerate(zip(final_boxes, final_confs)):
-            # FALSE POSITIVE FILTER: Color + Aspect Ratio + Confidence
-            x1, y1, x2, y2 = [int(v) for v in bbox]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w, x2), min(h, y2)
-            
-            # Skip if invalid bbox
-            if x2 <= x1 or y2 <= y1:
-                continue
-            
-            # Extract ROI for color analysis
-            roi = img[y1:y2, x1:x2]
-            
-            # Filter 1: Color Analysis - Reject white/gray regions (zebra crossings)
-            if not self._is_solar_panel_color(roi):
-                continue
-            
-            # Filter 2: Aspect Ratio - Solar panels typically 1:1 to 3:1
-            width = x2 - x1
-            height = y2 - y1
-            aspect_ratio = max(width, height) / max(min(width, height), 1)
-            if aspect_ratio > 4.0:  # Too elongated, likely not a panel
-                continue
-            
-            # Filter 3: Minimum confidence (higher threshold after TTA)
-            if conf < 0.15:  # Slightly higher threshold
-                continue
-            
             area_px = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
             area_m2 = area_px * (self.scale ** 2)
             
@@ -381,7 +358,7 @@ class SolarPanelClassifier:
             distance_m = calculate_euclidean_distance(bbox, buffer_center, self.scale)
             
             detections.append({
-                'id': len(detections),  # Use sequential ID after filtering
+                'id': i,
                 'bbox': bbox.tolist(),
                 'confidence': conf,
                 'area_m2': area_m2,
@@ -390,67 +367,7 @@ class SolarPanelClassifier:
                 'distance_from_center_m': distance_m
             })
         
-        print(f"  After color/aspect filtering: {len(detections)} valid panels")
         return detections
-    
-    def _is_solar_panel_color(self, roi):
-        """
-        Check if ROI has solar panel color characteristics.
-        Solar panels are typically dark blue/black with low brightness.
-        AGGRESSIVELY rejects white/gray regions like zebra crossings.
-        """
-        if roi.size == 0:
-            return False
-        
-        # Convert to HSV for better color analysis
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        
-        # Get mean values
-        mean_h, mean_s, mean_v = cv2.mean(hsv)[:3]
-        
-        # Get color statistics
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        mean_gray = np.mean(gray)
-        std_gray = np.std(gray)
-        max_gray = np.max(gray)
-        min_gray = np.min(gray)
-        
-        # Calculate percentage of white/bright pixels
-        white_pixels = np.sum(gray > 180) / gray.size
-        bright_pixels = np.sum(gray > 150) / gray.size
-        
-        # AGGRESSIVE REJECTION CRITERIA:
-        
-        # 1. Any significant white content (zebra crossings have white stripes)
-        if white_pixels > 0.15:  # More than 15% white pixels
-            return False
-        
-        # 2. Too much bright content overall
-        if bright_pixels > 0.40:  # More than 40% bright pixels
-            return False
-        
-        # 3. Too bright on average
-        if mean_gray > 140 or mean_v > 160:
-            return False
-        
-        # 4. High contrast with bright areas (zebra pattern)
-        if std_gray > 50 and max_gray > 200:
-            return False
-        
-        # 5. Low saturation with brightness (gray/white surfaces)
-        if mean_s < 25 and mean_v > 120:
-            return False
-        
-        # 6. Very wide dynamic range (white + dark = zebra)
-        if (max_gray - min_gray) > 150 and max_gray > 200:
-            return False
-        
-        # SOLAR PANEL ACCEPTANCE: Must be predominantly dark
-        # Solar panels are dark blue/black (mean_gray typically < 100)
-        if mean_gray > 130:
-            return False
-        
-        return True
     
     def _soft_nms(self, boxes, scores, iou_thresh=0.5, sigma=0.5):
         """
@@ -611,8 +528,9 @@ class SolarPanelClassifier:
         cv2.putText(overlay, f"Buffer Used: {buffer_text}", 
                    (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         
-        # Save output
-        output_dir = Path("F:/AURA/final/classify_output")
+        # Save output - use project-relative path
+        script_dir = Path(__file__).parent.parent
+        output_dir = script_dir / "artefacts" / "test"
         output_dir.mkdir(exist_ok=True, parents=True)
         output_path = output_dir / f"{Path(image_path).stem}_classified.jpg"
         cv2.imwrite(str(output_path), overlay)
@@ -627,8 +545,9 @@ class SolarPanelClassifier:
         
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
-        # Path to trained DeepLabV3+ model
-        model_path = 'F:/AURA/final/models/deeplabv3_final.pth'
+        # Path to trained DeepLabV3+ model - use project-relative path
+        script_dir = Path(__file__).parent.parent
+        model_path = script_dir / 'trained_model' / 'deeplabv3_final.pth'
         
         # Load architecture with aux_classifier (matching training config)
         self.deeplab = deeplabv3_resnet101(pretrained=False, aux_loss=True)
@@ -871,7 +790,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Solar Panel Classification")
     parser.add_argument("image", help="Input image path")
-    parser.add_argument("--model", default="F:/AURA/final/models/best.pt", help="YOLO model path")
+    parser.add_argument("--model", default=None, help="YOLO model path (defaults to trained_model/best.pt)")
     parser.add_argument("--scale", type=float, default=GSD_M_PER_PIXEL, help="Meters per pixel")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     

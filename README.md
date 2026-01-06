@@ -13,14 +13,26 @@ AURA is an automated solar panel detection and classification system that uses:
 pip install -r environment_details/requirements.txt
 ```
 
-### Usage
+### Running the Pipeline
+
+1. **Prepare your input**: Place an Excel file (`.xlsx` or `.csv`) in the `input/` folder with the following columns:
+   | name | latitude | longitude |
+   |------|----------|-----------|
+   | location_1 | 12.971891 | 77.594624 |
+   | location_2 | 13.082680 | 80.270718 |
+
+2. **Run the pipeline**:
+   ```bash
+   python pipeline_code/download_satellite.py
+   ```
+
+3. **Outputs**:
+   - Downloaded satellite images: `prediction_files/test/`
+   - Classified output images: `artefacts/test/`
+
+### Manual Classification (Single Image)
 ```bash
 python pipeline_code/solar_classify.py <image_path> --scale 0.1088
-```
-
-### Example
-```bash
-python pipeline_code/solar_classify.py satellite_image.png --scale 0.1088
 ```
 
 ## Project Structure
@@ -84,5 +96,4 @@ my-app/
 ## License
 MIT License
 
-## Authors
-AURA Team
+
