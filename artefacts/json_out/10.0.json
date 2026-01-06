@@ -1,0 +1,26 @@
+{
+  "sample_id": "10.0",
+  "lat": 23.05396927202596,
+  "lon": 72.5598269097869,
+  "has_solar": true,
+  "confidence": 0.8067,
+  "buffer_radius_sqft": 1200,
+  "pv_area_sqm_est": 12.32,
+  "euclidean_distance_m_est": 2.57,
+  "qc_status": "VERIFIABLE",
+  "bbox_or_mask": [
+    308.260498046875,
+    324.99774169921875,
+    342.9400634765625,
+    360.89544677734375
+  ],
+  "image_metadata": {
+    "source": "Google Static Maps API",
+    "capture_date": "2026-01-06",
+    "capture_time": "16:36:11",
+    "timestamp_iso": "2026-01-06T16:36:11.877573",
+    "image_file": "10.0.png",
+    "zoom_level": 20,
+    "image_size": "640x640"
+  }
+}

@@ -6,12 +6,15 @@ Workflow:
   2. Download satellite images from Google Static Maps API
   3. Run solar_classify.py on each downloaded image
   4. Save classified outputs to artefacts/test/
+  5. Save JSON results to artefacts/json_out/
 """
 
 import os
 import sys
+import json
 import requests
 from pathlib import Path
+from datetime import datetime
 import pandas as pd
 
 # Add pipeline_code to path for imports
@@ -19,6 +22,7 @@ script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir))
 
 from solar_classify import SolarPanelClassifier
+from qc_logic import determine_qc_status, check_image_quality
 
 # =============================================================
 # CONFIGURATION
@@ -29,19 +33,21 @@ PROJECT_ROOT = script_dir.parent
 INPUT_DIR = PROJECT_ROOT / "input"
 DOWNLOAD_DIR = PROJECT_ROOT / "prediction_files" / "test"
 OUTPUT_DIR = PROJECT_ROOT / "artefacts" / "test"
+JSON_DIR = PROJECT_ROOT / "artefacts" / "json_out"
 
 # Create directories
 DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+JSON_DIR.mkdir(exist_ok=True, parents=True)
 
 # Google Static Maps API settings
-API_KEY = "<Your api key>"  # Your API key
+API_KEY = "<yourAPIkey>"  # Your API key
 
 # Image settings
 ZOOM = 20  # High zoom for rooftop detail (18-21)
 SIZE = "640x640"  # Maximum free size
 MAPTYPE = "satellite"
-SCALE = 2  # 2x resolution (1280x1280 actual)
+SCALE = 1  # 2x resolution (1280x1280 actual)
 
 
 # =============================================================
@@ -185,18 +191,21 @@ def run_classification(image_path, classifier):
     try:
         result = classifier.classify(str(image_path))
         
-        # The classifier saves output to test_output_images by default
-        # Move/copy to artefacts/test
+        # The classifier already saves output to artefacts/test
+        # Only copy if the output is saved elsewhere
         if result.get('output_image'):
-            src = Path(result['output_image'])
-            if src.exists():
+            src = Path(result['output_image']).resolve()
+            dst = (OUTPUT_DIR / src.name).resolve()
+            
+            # Only copy if source and destination are different
+            if src != dst and src.exists():
                 import shutil
-                dst = OUTPUT_DIR / src.name
                 shutil.copy2(src, dst)
-                print(f"      ✅ Output saved: {dst.name}")
-                print(f"         PV Present: {result.get('pv_present', False)}")
-                print(f"         Panel Area: {result.get('panel_area_m2', 0):.2f} m²")
-                return result
+            
+            print(f"      ✅ Output saved: {src.name}")
+            print(f"         PV Present: {result.get('pv_present', False)}")
+            print(f"         Panel Area: {result.get('panel_area_m2', 0):.2f} m²")
+            return result
         
         return result
         
@@ -205,6 +214,72 @@ def run_classification(image_path, classifier):
         import traceback
         traceback.print_exc()
         return None
+
+
+def save_prediction_json(result, location, image_path, image_fetch_success=True):
+    """
+    Save prediction result as JSON file in the specified format.
+    """
+    sample_id = location.get('name', 'unknown')
+    current_time = datetime.now()
+    
+    # Run image quality check
+    quality_metadata = check_image_quality(str(image_path)) if image_path else {"quality_ok": False, "quality_issue": "No image"}
+    
+    # Get detections list
+    detections = result.get('all_detections', [])
+    
+    # Determine QC status using the proper QC logic (returns tuple: status, reason)
+    qc_status, qc_reason = determine_qc_status(
+        image_fetch_success=image_fetch_success,
+        detections=detections,
+        image_metadata=quality_metadata,
+        notes=""
+    )
+    
+    # Get bbox from best detection
+    bbox = None
+    if detections and len(detections) > 0:
+        for det in detections:
+            if det.get('confidence') == result.get('confidence_score'):
+                bbox = det.get('bbox')
+                break
+        if bbox is None:
+            bbox = detections[0].get('bbox')
+    
+    prediction_json = {
+        "sample_id": sample_id,
+        "lat": location.get('lat'),
+        "lon": location.get('lon'),
+        "has_solar": result.get('pv_present', False),
+        "confidence": round(result.get('confidence_score', 0), 4),
+        "buffer_radius_sqft": result.get('buffer_sqft', 0),
+        "pv_area_sqm_est": round(result.get('mask_area_m2', 0), 2),
+        "euclidean_distance_m_est": round(result.get('distance_from_center_m', 0), 2),
+        "qc_status": qc_status,
+        "bbox_or_mask": bbox,
+        "image_metadata": {
+            "source": "Google Static Maps API",
+            "capture_date": current_time.strftime("%Y-%m-%d"),
+            "capture_time": current_time.strftime("%H:%M:%S"),
+            "timestamp_iso": current_time.isoformat(),
+            "image_file": str(image_path.name) if image_path else None,
+            "zoom_level": ZOOM,
+            "image_size": SIZE
+        }
+    }
+    
+    # Add reason field if NOT_VERIFIABLE
+    if qc_status == "NOT_VERIFIABLE" and qc_reason:
+        prediction_json["qc_reason"] = qc_reason
+    
+    # Save to JSON file
+    json_path = JSON_DIR / f"{sample_id}.json"
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(prediction_json, f, indent=2, ensure_ascii=False)
+    
+    print(f"      📄 JSON saved: {json_path.name}")
+    return json_path
 
 
 def create_sample_excel():
@@ -273,6 +348,8 @@ def main():
             if result:
                 result['location'] = loc
                 results.append(result)
+                # Save JSON output
+                save_prediction_json(result, loc, image_path)
         else:
             print(f"   ⚠️ Skipping classification - image download failed")
     
